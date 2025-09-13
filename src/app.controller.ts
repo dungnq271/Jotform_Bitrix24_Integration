@@ -1,26 +1,27 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseInterceptors,
+  Logger,
+} from '@nestjs/common';
 import { AppService } from './app.service';
-import { UseInterceptors } from '@nestjs/common';
 import { NoFilesInterceptor } from '@nestjs/platform-express';
-import { ValidationPipe } from '@nestjs/common';
-import { BodyConverterPipe } from './converter.pipe';
-import { SubmissionDto } from './dto/submission-body.dto';
+
 import { RequestDataConverterPipe } from './converter.pipe';
-import { RequestData } from './dto/request-data.dto';
+import { RequestDataDto } from './dto/request-data.dto';
+import { CustomValidationPipe } from './converter.pipe';
 
 @Controller()
 export class AppController {
+  private readonly logger = new Logger(AppController.name, { timestamp: true });
   constructor(private readonly appService: AppService) {}
 
   @Post('webhook')
   @UseInterceptors(NoFilesInterceptor())
   async postSubmissions(
-    @Body(
-      new BodyConverterPipe(),
-      new ValidationPipe(),
-      new RequestDataConverterPipe(),
-    )
-    formData: RequestData,
+    @Body(new RequestDataConverterPipe(), new CustomValidationPipe())
+    formData: RequestDataDto,
   ) {
     await this.appService.postSubmission(formData);
   }

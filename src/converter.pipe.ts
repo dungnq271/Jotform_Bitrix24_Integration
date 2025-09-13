@@ -1,38 +1,90 @@
-import { PipeTransform, Injectable, ArgumentMetadata } from '@nestjs/common';
-import { SubmissionDto } from './dto/submission-body.dto';
 import {
-  RequestData,
+  PipeTransform,
+  Injectable,
+  ArgumentMetadata,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import {
+  RequestDataDto,
   Field,
   PhoneValue,
   EmailValue,
 } from './dto/request-data.dto';
-
-@Injectable()
-export class BodyConverterPipe implements PipeTransform<any> {
-  async transform(value: any, { metatype }: ArgumentMetadata) {
-    const result = new SubmissionDto();
-    let object = JSON.parse(value.rawRequest);
-    console.log(object);
-    result.name = object.q3_name;
-    result.email = object.q4_email;
-    result.phoneNumber = object.q5_phoneNumber.full;
-    return result;
-  }
-}
+import { ValidationPipe } from '@nestjs/common';
+import { ValidationError } from 'class-validator';
+import { concat } from 'rxjs';
+import { constants } from 'buffer';
 
 @Injectable()
 export class RequestDataConverterPipe implements PipeTransform<any> {
-  async transform(value: SubmissionDto, { metatype }: ArgumentMetadata) {
-    console.log(value);
-    const result = new RequestData();
-    result.fields = new Field();
-    result.fields.NAME = `${value.name.first}${value.name.last !== '' ? ' ' + value.name.last : ''}`;
-    result.fields.EMAIL = [new EmailValue()];
-    result.fields.EMAIL[0].VALUE = value.email;
-    result.fields.EMAIL[0].VALUE_TYPE = 'MAILING';
-    result.fields.PHONE = [new PhoneValue()];
-    result.fields.PHONE[0].VALUE = value.phoneNumber;
-    result.fields.PHONE[0].VALUE_TYPE = 'HOME';
+  async transform(value: any, { metatype }: ArgumentMetadata) {
+    if (!metatype || !this.toValidate(metatype)) {
+      return value;
+    }
+
+    let object = JSON.parse(value.rawRequest);
+
+    const resultObject = {
+      fields: {
+        NAME: object.q3_name.first,
+        LAST_NAME: object.q3_name.last,
+        EMAIL: [
+          {
+            VALUE: object.q4_email,
+            VALUE_TYPE: 'MAILING',
+          },
+        ],
+        PHONE: [
+          {
+            VALUE: object.phoneNumber,
+            VALUE_TYPE: 'HOME',
+          },
+        ],
+      },
+    };
+
+    const result = plainToInstance(metatype, resultObject);
+    console.log(result);
+
     return result;
+  }
+
+  private toValidate(metatype: Function): boolean {
+    const types: Function[] = [String, Boolean, Number, Array, Object];
+    return !types.includes(metatype);
+  }
+}
+
+export class CustomValidationPipe extends ValidationPipe {
+  private readonly logger = new Logger(CustomValidationPipe.name, {
+    timestamp: true,
+  });
+
+  constructor() {
+    super({
+      exceptionFactory: (errors: ValidationError[]) => {
+        let errorMessage = '';
+
+        if (errors[0].children == undefined) {
+          throw 'An error happend!';
+        }
+
+        for (let error of errors[0].children) {
+          if (error.constraints == undefined) {
+            console.log(error.constraints);
+            continue;
+          }
+
+          errorMessage = errorMessage.concat(
+            ...Object.values(error.constraints).map((s) => s + '. '),
+          );
+        }
+
+        this.logger.error(errorMessage);
+        throw new BadRequestException(errorMessage);
+      },
+    });
   }
 }
